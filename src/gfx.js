@@ -2,13 +2,23 @@
 
 export const OUTLINE = 'rgba(74, 42, 66, 0.55)';
 
-export function shade(hex, amt) {
-  let c = hex.replace('#', '');
+/** Contorno suave: a própria cor, mais escura (em vez de preto). */
+export const edge = (color) => (typeof color === 'string' ? shade(color, -0.38) : OUTLINE);
+
+function rgbOf(color) {
+  if (color.startsWith('rgb')) {
+    const [r, g, b] = color.match(/[\d.]+/g).map(Number);
+    return [r, g, b];
+  }
+  let c = color.replace('#', '');
   if (c.length === 3) c = c.split('').map((x) => x + x).join('');
   const n = parseInt(c, 16);
-  let r = n >> 16;
-  let g = (n >> 8) & 255;
-  let b = n & 255;
+  return [n >> 16, (n >> 8) & 255, n & 255];
+}
+
+/** Clareia (amt > 0) ou escurece (amt < 0) uma cor. */
+export function shade(color, amt) {
+  let [r, g, b] = rgbOf(color);
   if (amt < 0) {
     r *= 1 + amt;
     g *= 1 + amt;
@@ -89,10 +99,23 @@ export function paint(ctx, pathFn, fill, padrao, corPadrao, area) {
     drawPattern(ctx, padrao, corPadrao || '#ffffff', area || { x: 0, y: 0, w: 200, h: 260 });
     ctx.restore();
   }
+  // sombrinha suave em baixo e brilho em cima (volume)
+  ctx.save();
   ctx.beginPath();
   pathFn();
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2;
+  ctx.clip();
+  const a = area || { x: 0, y: 0, w: 200, h: 260 };
+  const gr = ctx.createLinearGradient(0, a.y, 0, a.y + a.h);
+  gr.addColorStop(0, 'rgba(255,255,255,0.16)');
+  gr.addColorStop(0.55, 'rgba(255,255,255,0)');
+  gr.addColorStop(1, 'rgba(60,20,60,0.14)');
+  ctx.fillStyle = gr;
+  ctx.fillRect(a.x, a.y, a.w, a.h);
+  ctx.restore();
+  ctx.beginPath();
+  pathFn();
+  ctx.strokeStyle = edge(fill);
+  ctx.lineWidth = 1.6;
   ctx.lineJoin = 'round';
   ctx.stroke();
 }
@@ -148,8 +171,8 @@ export function limb(ctx, x1, y1, x2, y2, w, color, outline = true) {
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
   if (outline) {
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = w + 3;
+    ctx.strokeStyle = edge(color);
+    ctx.lineWidth = w + 2.6;
     ctx.stroke();
   }
   ctx.strokeStyle = color;

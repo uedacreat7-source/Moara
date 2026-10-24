@@ -13,34 +13,41 @@ import { getArt, tinted } from './layers.js';
 import { PELES, OLHOS, BOCHECHAS, CABELO_CORES, TAMANHOS, find } from './options.js';
 import { ITEM_BY_ID } from '../data/catalog.js';
 import {
-  OUTLINE, shade, rr, ellipse, circle, star, heart, flower, paint, limb, lerp, RAINBOW,
+  OUTLINE, edge, shade, rr, ellipse, circle, star, heart, flower, paint, limb, lerp, RAINBOW,
 } from '../gfx.js';
 
 export const FRAME_W = 200;
 export const FRAME_H = 260;
 const FLOOR = 252;
 
+// Proporções "chibi" (estilo Avatar World): cabeça grande, corpinho pequeno.
 const BODY = {
-  adulto: { headCy: 84, headR: 44, torsoTop: 124, torsoBot: 198, torsoW: 58, armLen: 64, armW: 15, legW: 20 },
-  crianca: { headCy: 110, headR: 48, torsoTop: 154, torsoBot: 208, torsoW: 54, armLen: 50, armW: 14, legW: 19 },
-  bebe: { headCy: 148, headR: 50, torsoTop: 192, torsoBot: 234, torsoW: 62, armLen: 34, armW: 15, legW: 22 },
+  adulto: { headCy: 86, headR: 50, torsoTop: 134, torsoBot: 200, torsoW: 46, armLen: 56, armW: 12, legW: 15 },
+  crianca: { headCy: 104, headR: 56, torsoTop: 156, torsoBot: 210, torsoW: 44, armLen: 44, armW: 12, legW: 15 },
+  bebe: { headCy: 138, headR: 58, torsoTop: 190, torsoBot: 232, torsoW: 52, armLen: 30, armW: 14, legW: 18 },
 };
 
 export function geometry(tipo) {
   const b = BODY[tipo] || BODY.crianca;
   const cx = 100;
   const g = { ...b, cx, cy: b.headCy, r: b.headR, tipo };
-  const sy = b.torsoTop + b.armW * 0.55;
+  const sy = b.torsoTop + b.armW * 0.6;
   g.shoulderL = [cx - b.torsoW / 2 + b.armW * 0.45, sy];
   g.shoulderR = [cx + b.torsoW / 2 - b.armW * 0.45, sy];
-  g.handL = [cx - b.torsoW / 2 - b.armW * 0.7, sy + b.armLen];
-  g.handR = [cx + b.torsoW / 2 + b.armW * 0.7, sy + b.armLen];
-  g.legTop = b.torsoBot - 10;
-  g.legBot = FLOOR - 8;
+  g.handL = [cx - b.torsoW / 2 - b.armW * 0.75, sy + b.armLen];
+  g.handR = [cx + b.torsoW / 2 + b.armW * 0.75, sy + b.armLen];
+  g.legTop = b.torsoBot - 8;
+  g.legBot = FLOOR - 7;
   g.legLen = g.legBot - g.legTop;
-  g.legXL = cx - (b.legW * 0.62 + 1);
-  g.legXR = cx + (b.legW * 0.62 + 1);
+  g.legXL = cx - (b.legW * 0.6 + 0.5);
+  g.legXR = cx + (b.legW * 0.6 + 0.5);
   g.neck = [cx, b.torsoTop + 3];
+  // rosto
+  g.eyeY = g.cy + g.r * 0.2;
+  g.eyeDX = g.r * 0.41;
+  g.eyeRX = g.r * (tipo === 'bebe' ? 0.185 : 0.165);
+  g.eyeRY = g.r * (tipo === 'bebe' ? 0.2 : 0.215);
+  g.mouthY = g.cy + g.r * 0.58;
   return g;
 }
 
@@ -60,76 +67,331 @@ function drawHeadArt(ctx, g, img) {
 }
 
 // ---------------------------------------------------------------------------
-// Cabelo provisório
+// Cabeça e rosto provisórios
 // ---------------------------------------------------------------------------
 
-function hairCap(ctx, g, c, bumps = 4, part = false) {
+/** Rosto redondinho, mais largo nas bochechas e com queixo macio. */
+function headPath(ctx, g) {
   const { cx, cy, r } = g;
-  const R = r * 1.08;
-  const fy = cy - r * 0.3;
+  ctx.moveTo(cx - r, cy);
+  ctx.arc(cx, cy, r, Math.PI, 0);
+  ctx.bezierCurveTo(cx + r * 1.01, cy + r * 0.6, cx + r * 0.64, cy + r * 0.93, cx, cy + r * 0.93);
+  ctx.bezierCurveTo(cx - r * 0.64, cy + r * 0.93, cx - r * 1.01, cy + r * 0.6, cx - r, cy);
+  ctx.closePath();
+}
+
+function skinFill(ctx, g, skin) {
+  const { cx, cy, r } = g;
+  const gr = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.15, r * 0.1, cx, cy + r * 0.1, r * 1.25);
+  gr.addColorStop(0, shade(skin, 0.14));
+  gr.addColorStop(0.6, skin);
+  gr.addColorStop(1, shade(skin, -0.1));
+  return gr;
+}
+
+function drawHeadPlaceholder(ctx, g, skin) {
+  const { cx, cy, r } = g;
+  // pescocinho com sombra
+  ctx.fillStyle = shade(skin, -0.12);
   ctx.beginPath();
-  ctx.arc(cx, cy, R, Math.PI * 0.98, Math.PI * 2.02);
-  ctx.lineTo(cx + r * 0.84, cy - r * 0.02);
+  rr(ctx, cx - r * 0.16, cy + r * 0.7, r * 0.32, g.torsoTop - (cy + r * 0.7) + 6, r * 0.1);
+  ctx.fill();
+  // orelhas
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ellipse(ctx, cx + s * r * 0.96, cy + r * 0.24, r * 0.15, r * 0.19);
+    ctx.fillStyle = skin;
+    ctx.fill();
+    ctx.strokeStyle = edge(skin);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.beginPath();
+    ellipse(ctx, cx + s * r * 0.97, cy + r * 0.25, r * 0.07, r * 0.1);
+    ctx.fillStyle = shade(skin, -0.12);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  headPath(ctx, g);
+  ctx.fillStyle = skinFill(ctx, g, skin);
+  ctx.fill();
+  ctx.strokeStyle = edge(skin);
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+}
+
+function drawNose(ctx, g, skin) {
+  const { cx, r } = g;
+  const y = g.eyeY + g.r * 0.2;
+  ctx.beginPath();
+  ctx.arc(cx, y, r * 0.06, Math.PI * 0.15, Math.PI * 0.85);
+  ctx.strokeStyle = shade(skin, -0.3);
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+}
+
+function drawMouth(ctx, g) {
+  const { cx, r } = g;
+  const y = g.mouthY;
+  const w = r * (g.tipo === 'bebe' ? 0.12 : 0.15);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - w, y);
+  ctx.quadraticCurveTo(cx, y + w * 0.2, cx + w, y);
+  ctx.quadraticCurveTo(cx + w * 0.8, y + w * 1.25, cx, y + w * 1.25);
+  ctx.quadraticCurveTo(cx - w * 0.8, y + w * 1.25, cx - w, y);
+  ctx.closePath();
+  ctx.fillStyle = '#9c2f4a';
+  ctx.fill();
+  ctx.clip();
+  ctx.fillStyle = '#ff7f95';
+  ctx.beginPath();
+  ellipse(ctx, cx, y + w * 1.25, w * 0.7, w * 0.55);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(cx - w, y - 1, w * 2, w * 0.28);
+  ctx.restore();
+  ctx.beginPath();
+  ctx.moveTo(cx - w, y);
+  ctx.quadraticCurveTo(cx, y + w * 0.2, cx + w, y);
+  ctx.quadraticCurveTo(cx + w * 0.8, y + w * 1.25, cx, y + w * 1.25);
+  ctx.quadraticCurveTo(cx - w * 0.8, y + w * 1.25, cx - w, y);
+  ctx.strokeStyle = '#7a2238';
+  ctx.lineWidth = 1.4;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+/** Olhos grandes e brilhantes, com cílios (estilo Avatar World). */
+function drawEyes(ctx, g, iris) {
+  const { cx } = g;
+  const rx = g.eyeRX;
+  const ry = g.eyeRY;
+  const ey = g.eyeY;
+  for (const s of [-1, 1]) {
+    const ex = cx + s * g.eyeDX;
+    // branco do olho
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ellipse(ctx, ex, ey, rx * 1.05, ry);
+    ctx.fill();
+    // íris com degradê (mais clara embaixo)
+    ctx.save();
+    ctx.beginPath();
+    ellipse(ctx, ex, ey, rx * 1.05, ry);
+    ctx.clip();
+    const gr = ctx.createLinearGradient(0, ey - ry, 0, ey + ry);
+    gr.addColorStop(0, shade(iris, -0.45));
+    gr.addColorStop(0.55, iris);
+    gr.addColorStop(1, shade(iris, 0.35));
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ellipse(ctx, ex + s * rx * 0.05, ey + ry * 0.08, rx * 0.92, ry * 0.95);
+    ctx.fill();
+    ctx.fillStyle = shade(iris, -0.7);
+    ctx.beginPath();
+    ellipse(ctx, ex + s * rx * 0.05, ey + ry * 0.1, rx * 0.46, ry * 0.5);
+    ctx.fill();
+    ctx.restore();
+    // brilhos
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ellipse(ctx, ex - rx * 0.32, ey - ry * 0.34, rx * 0.36, ry * 0.3);
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    circle(ctx, ex + rx * 0.38, ey + ry * 0.38, rx * 0.17);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // pálpebra de cima grossinha + cílio no canto
+    ctx.strokeStyle = '#3a2232';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = g.tipo === 'bebe' ? 2.4 : 3;
+    ctx.beginPath();
+    ctx.ellipse(ex, ey + ry * 0.05, rx * 1.12, ry * 1.07, 0, Math.PI * 1.08, Math.PI * 1.92);
+    ctx.stroke();
+    if (g.tipo !== 'bebe') {
+      const ax = ex + s * rx * 1.08;
+      const ay = ey - ry * 0.32;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.quadraticCurveTo(ax + s * rx * 0.3, ay - ry * 0.05, ax + s * rx * 0.45, ay - ry * 0.35);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawBrows(ctx, g, hair) {
+  const { cx, r } = g;
+  ctx.strokeStyle = shade(hair, -0.25);
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  for (const s of [-1, 1]) {
+    const bx = cx + s * g.eyeDX;
+    const by = g.eyeY - g.eyeRY - r * 0.13;
+    ctx.beginPath();
+    ctx.moveTo(bx - r * 0.11, by + r * 0.025);
+    ctx.quadraticCurveTo(bx, by - r * 0.04, bx + r * 0.11, by + r * 0.025);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawCheeks(ctx, g, cor) {
+  const { cx, r } = g;
+  for (const s of [-1, 1]) {
+    const x = cx + s * r * 0.62;
+    const y = g.eyeY + r * 0.3;
+    const gr = ctx.createRadialGradient(x, y, 0, x, y, r * 0.2);
+    gr.addColorStop(0, cor);
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ellipse(ctx, x, y, r * 0.22, r * 0.15);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cabelo provisório (volume + franjinha em mechas + brilho)
+// ---------------------------------------------------------------------------
+
+/** Franja em mechas pontudas, da direita para a esquerda. */
+function bangs(ctx, g, n, sweep, depth) {
+  const { cx, cy, r } = g;
   const x0 = cx + r * 0.84;
   const x1 = cx - r * 0.84;
-  const step = (x0 - x1) / bumps;
-  for (let i = 0; i < bumps; i++) {
+  const valley = cy - r * 0.36;
+  const step = (x0 - x1) / n;
+  for (let i = 0; i < n; i++) {
     const xa = x0 - step * i;
     const xb = xa - step;
-    const drop = part && i === 1 ? r * 0.02 : r * 0.2;
-    ctx.quadraticCurveTo((xa + xb) / 2, fy + drop, xb, fy - (i === bumps - 1 ? -r * 0.3 : 0));
+    const mid = (xa + xb) / 2 - sweep * step;
+    const center = 1 - Math.abs((i + 0.5) / n - 0.5) * 0.7;
+    const tipY = cy + r * (depth * center - 0.06 * (1 - center));
+    ctx.quadraticCurveTo(xa - step * 0.05, tipY - r * 0.08, mid, tipY);
+    ctx.quadraticCurveTo(xb + step * 0.2, valley + r * 0.12, xb, valley + (i === n - 1 ? r * 0.25 : 0));
   }
+}
+
+const SIDE_LOCK = { longo: 0.72, chuquinhas: 0.34, cacheado: 0.38, curtinho: 0.22, coque: 0.12 };
+
+function hairFrontPath(ctx, g, estilo) {
+  const { cx, cy, r } = g;
+  const R = r * 1.1;
+  const oy = cy - r * 0.04;
+  const side = SIDE_LOCK[estilo] ?? 0.3;
+  const a0 = Math.PI * 0.96;
+  ctx.moveTo(cx + Math.cos(a0) * R, oy + Math.sin(a0) * R);
+  ctx.arc(cx, oy, R, a0, Math.PI * 2.04);
+  // mecha do lado direito (na frente da orelha)
+  ctx.quadraticCurveTo(cx + r * 1.04, cy + r * side, cx + r * 0.9, cy + r * (side + 0.1));
+  ctx.quadraticCurveTo(cx + r * 0.84, cy, cx + r * 0.84, cy - r * 0.36);
+  // franja
+  if (estilo === 'coque') bangs(ctx, g, 3, 0.15, -0.3);
+  else if (estilo === 'longo') bangs(ctx, g, 4, 0, -0.06);
+  else if (estilo === 'curtinho') bangs(ctx, g, 5, 0.4, -0.08);
+  else bangs(ctx, g, 5, 0.15, -0.1);
+  // mecha do lado esquerdo
+  ctx.quadraticCurveTo(cx - r * 0.84, cy, cx - r * 0.9, cy + r * (side + 0.1));
+  ctx.quadraticCurveTo(cx - r * 1.04, cy + r * side, cx + Math.cos(a0) * R, oy + Math.sin(a0) * R);
   ctx.closePath();
-  ctx.fillStyle = c;
-  ctx.fill();
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  // brilho
-  ctx.beginPath();
-  ctx.arc(cx - r * 0.1, cy - r * 0.1, r * 0.82, Math.PI * 1.15, Math.PI * 1.4);
-  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-  ctx.lineWidth = 3.5;
-  ctx.lineCap = 'round';
+}
+
+function hairStroke(ctx, c) {
+  ctx.strokeStyle = shade(c, -0.38);
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = 'round';
   ctx.stroke();
 }
 
 function drawHairBack(ctx, g, estilo, c) {
   const { cx, cy, r } = g;
-  ctx.fillStyle = c;
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2;
+  if (estilo === 'topete' || estilo === 'none') return;
+  const back = shade(c, -0.14);
+  ctx.fillStyle = back;
+  ctx.beginPath();
   if (estilo === 'longo') {
-    ctx.beginPath();
-    rr(ctx, cx - r * 1.14, cy - r * 0.7, r * 2.28, r * 2.15, r * 0.9);
-    ctx.fill();
-    ctx.stroke();
-  } else if (estilo === 'chuquinhas') {
+    ctx.moveTo(cx - r * 1.12, cy);
+    ctx.arc(cx, cy - r * 0.04, r * 1.12, Math.PI, 0);
+    ctx.lineTo(cx + r * 1.16, cy + r * 1.25);
+    for (let i = 0; i < 5; i++) {
+      const x = cx + r * 1.16 - (i + 0.5) * (r * 2.32) / 5;
+      ctx.quadraticCurveTo(x + r * 0.12, cy + r * 1.55, x - r * 0.1, cy + r * 1.3 + (i % 2) * r * 0.08);
+    }
+    ctx.lineTo(cx - r * 1.16, cy + r * 1.2);
+    ctx.closePath();
+  } else if (estilo === 'cacheado') {
+    for (let i = 0; i <= 12; i++) {
+      const a = Math.PI * (0.82 + (i / 12) * 1.36);
+      circle(ctx, cx + Math.cos(a) * r * 1.08, cy - r * 0.02 + Math.sin(a) * r * 1.08, r * 0.3);
+    }
+    circle(ctx, cx, cy, r * 1.1);
+  } else {
+    // só até a altura das orelhas (não faz "anel" em volta do queixo)
+    ctx.arc(cx, cy - r * 0.04, r * 1.12, Math.PI * 0.86, Math.PI * 2.14);
+    ctx.closePath();
+  }
+  ctx.fill();
+  hairStroke(ctx, back);
+
+  if (estilo === 'chuquinhas') {
     for (const s of [-1, 1]) {
       ctx.beginPath();
-      circle(ctx, cx + s * r * 1.12, cy - r * 0.12, r * 0.42);
+      ellipse(ctx, cx + s * r * 1.28, cy + r * 0.32, r * 0.3, r * 0.5, s * -0.35);
       ctx.fillStyle = c;
       ctx.fill();
+      hairStroke(ctx, c);
+      ctx.beginPath();
+      ctx.arc(cx + s * r * 1.3, cy + r * 0.2, r * 0.18, Math.PI * 1.1, Math.PI * 1.6);
+      ctx.strokeStyle = shade(c, 0.45);
+      ctx.lineWidth = 2.5;
       ctx.stroke();
       ctx.beginPath();
-      circle(ctx, cx + s * r * 0.86, cy - r * 0.22, r * 0.12);
+      circle(ctx, cx + s * r * 1.08, cy - r * 0.08, r * 0.12);
       ctx.fillStyle = '#ff6fb5';
       ctx.fill();
+      ctx.strokeStyle = shade('#ff6fb5', -0.35);
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
     }
-  } else if (estilo === 'coque') {
-    ctx.beginPath();
-    circle(ctx, cx, cy - r * 1.05, r * 0.42);
-    ctx.fill();
-    ctx.stroke();
-  } else if (estilo === 'cacheado') {
-    ctx.beginPath();
-    for (let i = 0; i <= 10; i++) {
-      const a = Math.PI * (0.9 + (i / 10) * 1.2);
-      circle(ctx, cx + Math.cos(a) * r * 1.02, cy - r * 0.05 + Math.sin(a) * r * 1.02, r * 0.3);
-    }
-    ctx.fill();
-    ctx.stroke();
   }
+  if (estilo === 'coque') {
+    ctx.beginPath();
+    circle(ctx, cx, cy - r * 1.12, r * 0.42);
+    ctx.fillStyle = c;
+    ctx.fill();
+    hairStroke(ctx, c);
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.06, cy - r * 1.16, r * 0.26, Math.PI * 1.1, Math.PI * 1.6);
+    ctx.strokeStyle = shade(c, 0.45);
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.beginPath();
+    rr(ctx, cx - r * 0.3, cy - r * 0.8, r * 0.6, r * 0.12, r * 0.06);
+    ctx.fillStyle = '#ff6fb5';
+    ctx.fill();
+  }
+}
+
+/** Sombrinha do cabelo na testa (dá profundidade). */
+function drawHairShadow(ctx, g, estilo, skin) {
+  if (estilo === 'topete' || estilo === 'none') return;
+  ctx.save();
+  ctx.beginPath();
+  headPath(ctx, g);
+  ctx.clip();
+  ctx.translate(0, g.r * 0.07);
+  ctx.beginPath();
+  hairFrontPath(ctx, g, estilo);
+  ctx.fillStyle = shade(skin, -0.16);
+  ctx.globalAlpha = 0.55;
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawHairFront(ctx, g, estilo, c) {
@@ -138,24 +400,63 @@ function drawHairFront(ctx, g, estilo, c) {
   if (estilo === 'topete') {
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.arc(cx + r * 0.06, cy - r * 0.98, r * 0.17, Math.PI * 0.6, Math.PI * 2.3);
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 8;
+    ctx.moveTo(cx - r * 0.18, cy - r * 0.92);
+    ctx.quadraticCurveTo(cx - r * 0.05, cy - r * 1.32, cx + r * 0.2, cy - r * 1.12);
+    ctx.quadraticCurveTo(cx + r * 0.3, cy - r * 0.95, cx + r * 0.08, cy - r * 0.95);
+    ctx.strokeStyle = shade(c, -0.3);
+    ctx.lineWidth = 7;
     ctx.stroke();
     ctx.strokeStyle = c;
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 4.5;
     ctx.stroke();
     return;
   }
-  if (estilo === 'cacheado') {
-    hairCap(ctx, g, c, 5);
-    ctx.fillStyle = c;
+  ctx.beginPath();
+  hairFrontPath(ctx, g, estilo);
+  const gr = ctx.createLinearGradient(0, cy - r * 1.2, 0, cy + r * 0.6);
+  gr.addColorStop(0, shade(c, 0.12));
+  gr.addColorStop(1, shade(c, -0.12));
+  ctx.fillStyle = gr;
+  ctx.fill();
+  hairStroke(ctx, c);
+
+  ctx.save();
+  ctx.beginPath();
+  hairFrontPath(ctx, g, estilo);
+  ctx.clip();
+  // fios mais escuros
+  ctx.strokeStyle = shade(c, -0.22);
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.7;
+  for (const i of [-1.5, 0, 1.5]) {
     ctx.beginPath();
-    for (let i = 0; i < 5; i++) circle(ctx, cx - r * 0.6 + i * r * 0.3, cy - r * 0.32, r * 0.17);
-    ctx.fill();
-    return;
+    ctx.moveTo(cx + i * r * 0.1, cy - r * 0.9);
+    ctx.quadraticCurveTo(cx + i * r * 0.3, cy - r * 0.6, cx + i * r * 0.34, cy - r * 0.32);
+    ctx.stroke();
   }
-  hairCap(ctx, g, c, estilo === 'longo' ? 3 : 4, estilo === 'longo');
+  ctx.globalAlpha = 1;
+  // faixa de brilho
+  ctx.strokeStyle = shade(c, 0.5);
+  ctx.globalAlpha = 0.75;
+  ctx.lineWidth = r * 0.09;
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.08, r * 0.84, Math.PI * 1.18, Math.PI * 1.42);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.08, r * 0.84, Math.PI * 1.5, Math.PI * 1.58);
+  ctx.stroke();
+  ctx.restore();
+
+  if (estilo === 'cacheado') {
+    ctx.strokeStyle = shade(c, -0.3);
+    ctx.lineWidth = 1.6;
+    for (const [dx, dy] of [[-0.62, -0.62], [0.55, -0.7], [0.05, -0.92], [-0.85, -0.1], [0.85, -0.15]]) {
+      ctx.beginPath();
+      ctx.arc(cx + dx * r, cy + dy * r, r * 0.08, 0, Math.PI * 1.4);
+      ctx.stroke();
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -168,14 +469,23 @@ function drawBodyPlaceholder(ctx, g, skin, shoeColor) {
   limb(ctx, g.legXL, g.legTop, g.legXL, g.legBot, g.legW, skin);
   limb(ctx, g.legXR, g.legTop, g.legXR, g.legBot, g.legW, skin);
   // sapatinhos
-  ctx.fillStyle = shoeColor;
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2;
   for (const x of [g.legXL, g.legXR]) {
+    const sx = x + (x < cx ? -2 : 2);
     ctx.beginPath();
-    ellipse(ctx, x + (x < cx ? -2 : 2), FLOOR - 5, g.legW * 0.78, 7.5);
+    rr(ctx, sx - g.legW * 0.75, FLOOR - 13, g.legW * 1.5, 12, 6);
+    ctx.fillStyle = shoeColor;
     ctx.fill();
+    ctx.strokeStyle = edge(shoeColor);
+    ctx.lineWidth = 1.6;
     ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    rr(ctx, sx - g.legW * 0.72, FLOOR - 4.5, g.legW * 1.44, 3.5, 1.7);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ellipse(ctx, sx - g.legW * 0.25, FLOOR - 10, 3, 1.6);
+    ctx.fill();
   }
   // braços
   limb(ctx, ...g.shoulderL, ...g.handL, g.armW, skin);
@@ -185,92 +495,26 @@ function drawBodyPlaceholder(ctx, g, skin, shoeColor) {
   torsoPath(ctx, g);
   ctx.fillStyle = skin;
   ctx.fill();
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = edge(skin);
+  ctx.lineWidth = 1.6;
   ctx.stroke();
 }
 
 function torsoPath(ctx, g, grow = 0) {
-  const round = g.tipo === 'bebe' ? 0.48 : 0.34;
+  const round = g.tipo === 'bebe' ? 0.48 : 0.4;
   rr(ctx, g.cx - g.torsoW / 2 - grow, g.torsoTop - grow, g.torsoW + grow * 2, g.torsoBot - g.torsoTop + grow * 2, g.torsoW * round);
 }
 
 function drawHands(ctx, g, skin) {
   ctx.fillStyle = skin;
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = edge(skin);
+  ctx.lineWidth = 1.6;
   for (const h of [g.handL, g.handR]) {
     ctx.beginPath();
-    circle(ctx, h[0], h[1], g.armW * 0.62);
+    circle(ctx, h[0], h[1], g.armW * 0.66);
     ctx.fill();
     ctx.stroke();
   }
-}
-
-function drawHeadPlaceholder(ctx, g, skin) {
-  const { cx, cy, r } = g;
-  ctx.fillStyle = skin;
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2;
-  for (const s of [-1, 1]) {
-    ctx.beginPath();
-    circle(ctx, cx + s * r * 0.98, cy + r * 0.12, r * 0.2);
-    ctx.fill();
-    ctx.stroke();
-  }
-  ctx.beginPath();
-  circle(ctx, cx, cy, r);
-  ctx.fill();
-  ctx.stroke();
-}
-
-function drawMouth(ctx, g) {
-  const { cx, cy, r } = g;
-  ctx.beginPath();
-  ctx.arc(cx, cy + r * 0.36, r * 0.13, Math.PI * 0.15, Math.PI * 0.85);
-  ctx.strokeStyle = '#8a3b4b';
-  ctx.lineWidth = 2.6;
-  ctx.lineCap = 'round';
-  ctx.stroke();
-}
-
-function drawEyes(ctx, g, iris) {
-  const { cx, cy, r } = g;
-  const k = g.tipo === 'bebe' ? 1.06 : 1;
-  const rx = r * 0.16 * k;
-  const ry = r * 0.21 * k;
-  for (const s of [-1, 1]) {
-    const ex = cx + s * r * 0.38;
-    const ey = cy + r * 0.08;
-    ctx.fillStyle = shade(iris, -0.55);
-    ctx.beginPath();
-    ellipse(ctx, ex, ey, rx, ry);
-    ctx.fill();
-    ctx.fillStyle = iris;
-    ctx.beginPath();
-    ellipse(ctx, ex, ey + ry * 0.12, rx * 0.78, ry * 0.76);
-    ctx.fill();
-    ctx.fillStyle = shade(iris, -0.6);
-    ctx.beginPath();
-    ellipse(ctx, ex, ey + ry * 0.1, rx * 0.42, ry * 0.46);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    circle(ctx, ex - rx * 0.32, ey - ry * 0.36, rx * 0.38);
-    circle(ctx, ex + rx * 0.36, ey + ry * 0.32, rx * 0.17);
-    ctx.fill();
-  }
-}
-
-function drawCheeks(ctx, g, cor) {
-  const { cx, cy, r } = g;
-  ctx.fillStyle = cor;
-  ctx.globalAlpha = 0.55;
-  ctx.beginPath();
-  ellipse(ctx, cx - r * 0.62, cy + r * 0.36, r * 0.17, r * 0.105);
-  ellipse(ctx, cx + r * 0.62, cy + r * 0.36, r * 0.17, r * 0.105);
-  ctx.fill();
-  ctx.globalAlpha = 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -574,12 +818,12 @@ function drawWrist(ctx, g, d) {
 
 function drawFace(ctx, g, d) {
   const { cx, cy, r } = g;
-  const ey = cy + r * 0.08;
+  const ey = g.eyeY;
   switch (d.tipo) {
     case 'oculos_coracao':
     case 'oculos_estrela': {
       for (const s of [-1, 1]) {
-        const ex = cx + s * r * 0.38;
+        const ex = cx + s * g.eyeDX;
         ctx.globalAlpha = 0.55;
         ctx.beginPath();
         if (d.tipo === 'oculos_coracao') heart(ctx, ex, ey - r * 0.02, r * 0.3);
@@ -601,8 +845,8 @@ function drawFace(ctx, g, d) {
       break;
     }
     case 'chupeta': {
-      const my = cy + r * 0.42;
-      paint(ctx, () => ellipse(ctx, cx, my, r * 0.26, r * 0.15), d.c1);
+      const my = g.mouthY + r * 0.06;
+      paint(ctx, () => ellipse(ctx, cx, my, r * 0.24, r * 0.14), d.c1);
       ctx.beginPath();
       ctx.arc(cx, my + r * 0.16, r * 0.12, 0, Math.PI * 2);
       ctx.strokeStyle = d.c2;
@@ -612,8 +856,8 @@ function drawFace(ctx, g, d) {
     }
     case 'mascara': {
       ctx.beginPath();
-      rr(ctx, cx - r * 0.82, ey - r * 0.24, r * 1.64, r * 0.46, r * 0.22);
-      for (const s of [-1, 1]) ellipse(ctx, cx + s * r * 0.38, ey, r * 0.13, r * 0.16);
+      rr(ctx, cx - r * 0.86, ey - r * 0.3, r * 1.72, r * 0.56, r * 0.26);
+      for (const s of [-1, 1]) ellipse(ctx, cx + s * g.eyeDX, ey, g.eyeRX * 1.15, g.eyeRY * 1.1);
       ctx.fillStyle = d.c1;
       ctx.fill('evenodd');
       ctx.strokeStyle = OUTLINE;
@@ -812,7 +1056,11 @@ export function drawCharacter(ctx, look, equipped = {}) {
 
   // cabeça (provisória, quando não há arte de pele)
   if (!peleArt) drawHeadPlaceholder(ctx, g, skin);
-  if (!corpoArt) drawMouth(ctx, g);
+  if (!corpoArt) {
+    drawNose(ctx, g, skin);
+    drawMouth(ctx, g);
+  }
+  if (!getArt(`cabelo/cabelo_${estilo}`)) drawHairShadow(ctx, g, estilo, skin);
 
   // 8. olhos
   const olhosArt = getArt(`olhos/olhos_${look.olhos}`);
@@ -830,6 +1078,7 @@ export function drawCharacter(ctx, look, equipped = {}) {
   const hairArt = getArt(`cabelo/cabelo_${estilo}`);
   if (hairArt) drawHeadArt(ctx, g, tinted(hairArt, hair));
   else drawHairFront(ctx, g, estilo, hair);
+  if (!olhosArt && estilo !== 'none') drawBrows(ctx, g, hair);
 
   // 11. rosto e 12. cabeça
   for (const slot of ['rosto', 'cabeca']) {
@@ -897,8 +1146,11 @@ export function renderItemIcon(canvas, itemId) {
   if (!it) return canvas;
   const g = geometry('crianca');
   let box;
-  if (it.slot === 'roupa') box = { x: 18, y: 138, s: 122 };
-  else if (it.slot === 'cabeca' || it.slot === 'rosto') box = { x: g.cx - g.r * 1.75, y: g.cy - g.r * 2.05, s: g.r * 3.5 };
+  if (it.slot === 'roupa') {
+    const s0 = FLOOR - g.torsoTop + 22;
+    box = { x: g.cx - s0 / 2, y: g.torsoTop - 14, s: s0 };
+  }
+  else if (it.slot === 'cabeca' || it.slot === 'rosto') box = { x: g.cx - g.r * 1.6, y: g.cy - g.r * 1.85, s: g.r * 3.2 };
   else if (it.slot === 'pescoco') box = { x: g.cx - 42, y: g.torsoTop - 34, s: 84 };
   else {
     const [wx, wy] = along(g.shoulderR, g.handR, 0.8);
